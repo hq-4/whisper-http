@@ -207,4 +207,5 @@ marimo/_lsp/
 __marimo__/
 
 # Local model/artifact dumps
-temp_outputs_*/
+temp_outputs*/
+logs/*
