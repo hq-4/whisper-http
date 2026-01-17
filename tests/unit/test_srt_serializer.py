@@ -81,3 +81,30 @@ def test_srt_serializer_strips_speaker_zero_for_fallback(tmp_path: Path) -> None
     assert subtitles[0].content == "repeated line"
     assert int(subtitles[0].end.total_seconds()) == 2
     assert subtitles[1].content == "Second sentence"
+
+
+def test_srt_serializer_splits_long_segments(tmp_path: Path) -> None:
+    transcript = Transcript(
+        segments=[
+            Segment(sequence=1, speaker="Speaker 0", start=0.0, end=120.0, text="looped bumper"),
+        ],
+        metadata=TranscriptMetadata(
+            total_duration=120.0,
+            speaker_count=0,
+            provenance=TranscriptProvenance.FASTER_WHISPER,
+        ),
+    )
+
+    serializer = TranscriptSRTSerializer()
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"")
+
+    srt_path = serializer.write(transcript, audio_path)
+    subtitles = list(srt.parse(srt_path.read_text(encoding="utf-8-sig")))
+
+    # Should be split into 30-second slices (last one shorter)
+    assert len(subtitles) == 4
+    durations = [sub.end.total_seconds() - sub.start.total_seconds() for sub in subtitles]
+    assert durations[:3] == [30.0, 30.0, 30.0]
+    assert durations[3] == 30.0  # 120 / 30 => four equal slices
+    assert all(sub.content == "looped bumper" for sub in subtitles)

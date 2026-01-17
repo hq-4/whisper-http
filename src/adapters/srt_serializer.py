@@ -9,6 +9,9 @@ import srt
 from src.domain.models import Transcript, TranscriptProvenance
 
 
+MAX_SEGMENT_DURATION_SECONDS = 30.0
+
+
 class TranscriptSRTSerializer:
     def write(self, transcript: Transcript, audio_path: Path) -> Path:
         target_path = audio_path.with_suffix(".srt")
@@ -72,8 +75,9 @@ class TranscriptSRTSerializer:
                     and previous["normalized_text"] == normalized_text
                 ):
                     previous["text"] = previous["text"] or text
-                    previous["end"] = max(previous["end"], end_seconds)
-                    continue
+                    if end_seconds - previous["start"] <= MAX_SEGMENT_DURATION_SECONDS:
+                        previous["end"] = max(previous["end"], end_seconds)
+                        continue
 
             prepared.append(
                 {
@@ -85,9 +89,41 @@ class TranscriptSRTSerializer:
                 }
             )
 
+        expanded: list[dict[str, float | str | None]] = []
         for entry in prepared:
-            entry.pop("normalized_text", None)
-        return prepared
+            normalized = entry.pop("normalized_text", None)
+            duration = entry["end"] - entry["start"]
+            if duration > MAX_SEGMENT_DURATION_SECONDS and normalized is not None:
+                expanded.extend(
+                    self._split_entry(entry, normalized, MAX_SEGMENT_DURATION_SECONDS)
+                )
+            else:
+                expanded.append(entry)
+        return expanded
+
+    def _split_entry(
+        self,
+        entry: dict[str, float | str | None],
+        normalized_text: str,
+        max_duration: float,
+    ) -> list[dict[str, float | str | None]]:
+        start = entry["start"]
+        end = entry["end"]
+        text = entry["text"]
+        speaker = entry.get("speaker")
+        pieces: list[dict[str, float | str | None]] = []
+        while start < end:
+            slice_end = min(start + max_duration, end)
+            pieces.append(
+                {
+                    "speaker": speaker,
+                    "text": text,
+                    "start": start,
+                    "end": slice_end,
+                }
+            )
+            start = slice_end
+        return pieces
 
     @staticmethod
     def _normalize_text(text: str) -> str:

@@ -126,3 +126,4 @@ class TranscriptionService:
             returncode=getattr(run_result, "returncode", 0),
         )
         raise DiarizationFailure("diarization failed") from error
+
